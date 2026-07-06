@@ -1,6 +1,6 @@
 # OmniSignal
 
-A multi-agent AI system for fiber ISP operations — marketing analytics, infrastructure investment decisions, content strategy, and HR policy Q&A under one unified interface.
+A multi-agent AI system for fiber ISP operations, marketing analytics, infrastructure investment decisions, content strategy, and HR policy Q&A under one unified interface.
 
 Built with LangGraph, Anthropic Claude, PGVector, and FastAPI. Deployed on Azure.
 
@@ -27,7 +27,7 @@ guardrails → planner → [specialist agent] → validator → response builder
 | `strategist` | Claude Opus | Social content ideation, content calendar, FTC compliance checking |
 | `hr_docqa` | Claude Haiku | HR policy Q&A, PII masking, citation-required answers, escalation routing |
 
-All financial and analytical calculations are **deterministic Python** — Claude interprets and narrates results but never computes numbers.
+All financial and analytical calculations are **deterministic Python**, Claude interprets and narrates results but never computes numbers.
 
 ---
 
@@ -54,10 +54,10 @@ All financial and analytical calculations are **deterministic Python** — Claud
 ### Retrieval
 
 Hybrid pipeline combining:
-- **Dense search** — cosine similarity via pgvector (`<=>` operator), Azure OpenAI `text-embedding-3-small` (1536-dim)
-- **Keyword search** — PostgreSQL full-text search (`ts_rank`)
-- **RRF fusion** — Reciprocal Rank Fusion merges both result lists without score-scale dependency
-- **Metadata pre-filter** — JSONB containment applied before ANN search for 18% precision improvement
+- **Dense search**: cosine similarity via pgvector (`<=>` operator), Azure OpenAI `text-embedding-3-small` (1536-dim)
+- **Keyword search**: PostgreSQL full-text search (`ts_rank`)
+- **RRF fusion**: Reciprocal Rank Fusion merges both result lists without score-scale dependency
+- **Metadata pre-filter**: JSONB containment applied before ANN search for 18% precision improvement
 
 ### Fidelity Scoring
 
@@ -75,11 +75,11 @@ Score < 0.92 → automatic retry. Score < 0.92 on retry → pass through with va
 
 Pre-publication gate for all outbound content:
 
-- **TCPA** — prior express written consent for SMS/call outreach
-- **FTC/FCC** — advertising claim truthfulness, broadband disclosure requirements
-- **CAN-SPAM** — opt-out mechanism, physical address, subject line (email only)
-- **Privacy** — CCPA (CA), VCDPA (VA), CPA (CO)
-- **State laws** — broadband advertising restrictions per state
+- **TCPA**: prior express written consent for SMS/call outreach
+- **FTC/FCC**: advertising claim truthfulness, broadband disclosure requirements
+- **CAN-SPAM**: opt-out mechanism, physical address, subject line (email only)
+- **Privacy**: CCPA (CA), VCDPA (VA), CPA (CO)
+- **State laws**: broadband advertising restrictions per state
 
 Result: `GO` | `GO-WITH-REVIEW` | `NO-GO`. Any `NO-GO` blocks content before it leaves the system.
 
@@ -119,9 +119,9 @@ OmniSignal/
 ├── services/
 │   └── decision_engine.py       # Cross-agent tool delegation + compound queries
 ├── llm_server/
-│   └── main.py                  # FastAPI server (port 8000) — primary entry point
+│   └── main.py                  # FastAPI server (port 8000) , primary entry point
 ├── rag_server/
-│   ├── main.py                  # FastAPI server (port 8081) — retrieval + ingestion
+│   ├── main.py                  # FastAPI server (port 8081) , retrieval + ingestion
 │   └── ingestion/
 │       └── pipeline.py          # Document chunking + embedding + storage
 ├── infra/
@@ -130,7 +130,7 @@ OmniSignal/
 │   ├── docker-compose.yml
 │   ├── init_pgvector.sql        # PGVector table setup (6 module-siloed tables)
 │   └── azure/
-│       └── azure-ml-config.yml  # LightGBM fiber demand forecast — monthly retrain
+│       └── azure-ml-config.yml  # LightGBM fiber demand forecast , monthly retrain
 ├── tests/
 │   ├── agents.py
 │   ├── compliance.py
@@ -185,14 +185,14 @@ This starts both the LLM server (port 8000) and RAG server (port 8081) with PGVe
 ```bash
 pip install -r requirements.txt
 
-# Terminal 1 — LLM server
+# Terminal 1 , LLM server
 uvicorn llm_server.main:app --host 0.0.0.0 --port 8000 --reload
 
-# Terminal 2 — RAG server
+# Terminal 2 , RAG server
 uvicorn rag_server.main:app --host 0.0.0.0 --port 8081 --reload
 ```
 
-Both servers fall back to mock data when the database is unavailable — local development works without credentials.
+Both servers fall back to mock data when the database is unavailable, local development works without credentials.
 
 ---
 
@@ -228,7 +228,7 @@ Upload a PDF or DOCX to a module vector store via multipart form.
 
 ---
 
-## Azure ML — Fiber Demand Forecast
+## Azure ML , Fiber Demand Forecast
 
 A LightGBM regression model trained on ~180,000 historical copper-to-fiber conversion records. Features: Calix demographics + internal subscriber data. Retrains monthly on the 1st at 02:00 UTC via Azure ML scheduled job.
 
