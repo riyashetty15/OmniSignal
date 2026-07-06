@@ -1,0 +1,198 @@
+# =============================================================================
+# OmniSignal — Azure ML Configuration
+# Covers: workspace, compute, environments, the fiber demand forecast pipeline,
+# and the monthly retraining schedule.
+# Deploy with: az ml job create -f infra/azure/azure-ml-config.yml
+# =============================================================================
+
+$schema: https://azuremlschemas.azureedge.net/latest/commandJob.schema.json
+
+workspace:
+  name: omnisignal-ml-workspace
+  resource_group: omnisignal-rg
+  location: eastus2
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Compute clusters
+# ─────────────────────────────────────────────────────────────────────────────
+compute:
+  training_cluster:
+    name: omnisignal-train-cluster
+    type: amlcompute
+    size: Standard_DS3_v2
+    min_instances: 0
+    max_instances: 4
+    idle_time_before_scale_down: 120   # seconds
+
+  inference_cluster:
+    name: omnisignal-inference-cluster
+    type: amlcompute
+    size: Standard_DS2_v2
+    min_instances: 1
+    max_instances: 2
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Environments
+# ─────────────────────────────────────────────────────────────────────────────
+environments:
+  fiber_forecast_env:
+    name: fiber-forecast-env
+    version: "1.0"
+    conda_file:
+      channels: [defaults, conda-forge]
+      dependencies:
+        - python=3.11
+        - pip:
+          - lightgbm==4.3.0
+          - scikit-learn==1.4.0
+          - pandas==2.2.0
+          - numpy==1.26.0
+          - mlflow==2.12.0
+          - azureml-mlflow==1.56.0
+          - shap==0.45.0
+          - optuna==3.6.0
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Fiber demand forecast model — training job
+# =============================================================================
+# Features (from Calix + internal subscriber DB):
+#   median_household_income, age_18_54_share, avg_broadband_spend,
+#   fiber_propensity_score, home_ownership_rate, mdu_pct,
+#   copper_take_rate, competitive_alternatives, distance_to_existing_fiber
+#
+# Target: fiber_take_rate (continuous, 0.0–1.0)
+# Model:  LightGBM regressor
+# =============================================================================
+fiber_demand_training:
+  name: fiber-demand-forecast-train
+  type: command
+  display_name: "Fiber Demand Forecast — Monthly Retrain"
+  description: >
+    Retrains the LightGBM fiber adoption prediction model on the latest
+    subscriber conversion data joined with Calix demographics.
+
+  compute: azureml:omnisignal-train-cluster
+  environment: azureml:fiber-forecast-env@latest
+
+  code: ./ml/fiber_forecast/
+  command: >
+    python train.py
+    --data-path ${{inputs.training_data}}
+    --model-output ${{outputs.model_dir}}
+    --n-trials 50
+    --cv-folds 5
+    --early-stopping-rounds 50
+    --mlflow-tracking-uri ${{inputs.mlflow_uri}}
+
+  inputs:
+    training_data:
+      type: uri_folder
+      path: azureml://datastores/omnisignal_data/paths/fiber_forecast/training/
+    mlflow_uri:
+      type: string
+      default: "azureml://experiments/fiber-demand-forecast"
+
+  outputs:
+    model_dir:
+      type: uri_folder
+      path: azureml://datastores/omnisignal_data/paths/fiber_forecast/models/
+
+  environment_variables:
+    AZURE_STORAGE_ACCOUNT: omnisignalstore
+    LOG_LEVEL: INFO
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Online endpoint — real-time inference for Financial Planner Agent
+# ─────────────────────────────────────────────────────────────────────────────
+online_endpoint:
+  name: fiber-demand-forecast-endpoint
+  description: "Real-time fiber adoption probability scoring for Financial Planner agent"
+  auth_mode: key
+
+  deployment:
+    name: fiber-demand-v1
+    model: azureml:fiber-demand-forecast@latest
+    environment: azureml:fiber-forecast-env@latest
+    instance_type: Standard_DS2_v2
+    instance_count: 1
+
+    scoring_script: score.py
+    code_configuration:
+      code: ./ml/fiber_forecast/
+      scoring_script: score.py
+
+    scale_settings:
+      scale_type: default
+      min_instances: 1
+      max_instances: 3
+
+    request_settings:
+      request_timeout_ms: 3000
+      max_concurrent_requests_per_instance: 10
+
+    liveness_probe:
+      initial_delay: 10
+      period: 10
+      timeout: 2
+      failure_threshold: 30
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Monthly retraining schedule
+# ─────────────────────────────────────────────────────────────────────────────
+schedule:
+  name: fiber-forecast-monthly-retrain
+  display_name: "Monthly Fiber Forecast Retrain"
+  description: "Triggers on the 1st of each month at 02:00 UTC"
+  trigger:
+    type: cron
+    expression: "0 2 1 * *"   # 02:00 UTC on the 1st of every month
+    start_time: "2024-01-01T02:00:00"
+    time_zone: UTC
+  create_job: azureml:fiber-demand-forecast-train@latest
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Data pipeline — feature engineering + training data prep
+# ─────────────────────────────────────────────────────────────────────────────
+data_pipeline:
+  name: fiber-forecast-data-prep
+  display_name: "Fiber Forecast Feature Engineering"
+  steps:
+    - name: extract_subscriber_data
+      command: python extract_subscribers.py --output ${{outputs.raw_subs}}
+      compute: azureml:omnisignal-train-cluster
+
+    - name: join_calix_demographics
+      command: >
+        python join_calix.py
+        --subscribers ${{inputs.raw_subs}}
+        --output ${{outputs.joined_data}}
+      depends_on: [extract_subscriber_data]
+      compute: azureml:omnisignal-train-cluster
+
+    - name: feature_engineering
+      command: >
+        python feature_eng.py
+        --data ${{inputs.joined_data}}
+        --output ${{outputs.features}}
+      depends_on: [join_calix_demographics]
+      compute: azureml:omnisignal-train-cluster
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Model registry settings
+# ─────────────────────────────────────────────────────────────────────────────
+model_registry:
+  name: fiber-demand-forecast
+  description: "Fiber adoption probability model (LightGBM) — trained on Calix + subscriber data"
+  tags:
+    framework: lightgbm
+    task: regression
+    domain: fiber_demand
+    team: omnisignal_data_science
+  properties:
+    input_features: >
+      median_household_income, age_18_54_share, avg_broadband_spend,
+      fiber_propensity_score, home_ownership_rate, mdu_pct,
+      copper_take_rate, competitive_alternatives, distance_to_existing_fiber
+    output: fiber_take_rate_probability
+    training_data_size: "~180,000 subscriber conversion records"
+    evaluation_metric: rmse

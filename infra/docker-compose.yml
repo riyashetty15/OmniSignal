@@ -1,0 +1,88 @@
+version: "3.9"
+
+services:
+  # ── PostgreSQL + pgvector ─────────────────────────────────────────────────
+  pgvector:
+    image: pgvector/pgvector:pg16
+    container_name: fiberorbit_pgvector
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB:       fiberorbit_db
+      POSTGRES_USER:     fiberorbit_admin
+      POSTGRES_PASSWORD: ${PG_ADMIN_PASSWORD}
+    volumes:
+      - pgvector_data:/var/lib/postgresql/data
+      - ./infra/init_pgvector.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fiberorbit_admin -d fiberorbit_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ── Redis (session cache for scaling) ─────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: fiberorbit_redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+    restart: unless-stopped
+
+  # ── RAG Server (port 8081) ─────────────────────────────────────────────────
+  rag_server:
+    build:
+      context: .
+      dockerfile: infra/Dockerfile.rag
+    container_name: fiberorbit_rag
+    ports:
+      - "8081:8081"
+    environment:
+      PGVECTOR_CONN: postgresql+asyncpg://fiberorbit_admin:${PG_ADMIN_PASSWORD}@pgvector:5432/fiberorbit_db
+      SQLITE_DB:     /data/context_memory.db
+    volumes:
+      - sqlite_data:/data
+    depends_on:
+      pgvector:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+  # ── LLM Server (port 8000) ────────────────────────────────────────────────
+  llm_server:
+    build:
+      context: .
+      dockerfile: infra/Dockerfile.llm
+    container_name: fiberorbit_llm
+    ports:
+      - "8000:8000"
+    environment:
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      CALIX_API_KEY:     ${CALIX_API_KEY}
+      SQLITE_DB:         /data/context_memory.db
+      RAG_SERVER_URL:    http://rag_server:8081
+      LINKEDIN_TOKEN:    ${LINKEDIN_TOKEN}
+      META_TOKEN:        ${META_TOKEN}
+      X_TOKEN:           ${X_TOKEN}
+    volumes:
+      - sqlite_data:/data
+    depends_on:
+      rag_server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  pgvector_data:
+  sqlite_data:

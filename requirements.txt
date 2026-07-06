@@ -1,0 +1,35 @@
+# ── LLM & Agent Framework ─────────────────────────────────────────────────────
+anthropic>=0.30.0
+langgraph>=0.2.0
+langgraph-checkpoint-sqlite>=1.0.0
+
+# ── API Server ────────────────────────────────────────────────────────────────
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.7.0
+websockets>=12.0
+
+# ── Database ──────────────────────────────────────────────────────────────────
+asyncpg>=0.29.0
+aiosqlite>=0.20.0
+sqlalchemy[asyncio]>=2.0.0
+psycopg2-binary>=2.9.9     # for sync operations (migrations)
+
+# ── Vector / ML ───────────────────────────────────────────────────────────────
+numpy>=1.26.0
+pandas>=2.2.0
+scikit-learn>=1.4.0
+
+# ── Document parsing ──────────────────────────────────────────────────────────
+pypdf>=4.0.0
+python-docx>=1.1.0
+
+# ── HTTP ─────────────────────────────────────────────────────────────────────
+httpx>=0.27.0
+
+# ── Logging & Observability ───────────────────────────────────────────────────
+structlog>=24.1.0
+
+# ── Testing ───────────────────────────────────────────────────────────────────
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
